@@ -172,6 +172,36 @@ td:first-child { text-align: left; font-weight: 500; }
 .stat-pill .sp-val { font-size: 20px; font-weight: 800; }
 .stat-pill .sp-sub { font-size: 10px; color: var(--muted); }
 
+/* ── Page-level navigation tabs ─────────────────────────── */
+.page-nav {
+  background: var(--indigo); padding: 0 32px;
+  display: flex; gap: 0; border-bottom: 3px solid var(--amber);
+}
+.page-nav-tab {
+  padding: 11px 20px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  color: #a8aee8; border-bottom: 3px solid transparent; margin-bottom: -3px;
+  transition: all .15s; letter-spacing: .2px; white-space: nowrap;
+}
+.page-nav-tab:hover { color: #fff; }
+.page-nav-tab.active { color: #fff; border-bottom-color: var(--amber); }
+
+/* ── Panes ───────────────────────────────────────────────── */
+.pane { display: none; }
+.pane.active { display: contents; }
+
+/* ── Comparison tables (Averages tab) ───────────────────── */
+.avg-cmp-table th.bench  { background: var(--amber-dark) !important; }
+.avg-cmp-table td.bench  { background: var(--amber-light); font-weight: 700; }
+.cmp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 1100px) { .cmp-grid { grid-template-columns: 1fr; } }
+.section-divider {
+  display: flex; align-items: center; gap: 12px; color: var(--muted);
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px;
+}
+.section-divider::before, .section-divider::after {
+  content:''; flex:1; height:1px; background: var(--border);
+}
+
 /* ── Tabs (for chart switch) ─────────────────────────────── */
 .tab-bar { display: flex; gap: 0; border-bottom: 2px solid var(--border); padding: 0 18px; background:#fafbff; }
 .tab { padding: 9px 16px; font-size: 12px; font-weight: 600; cursor: pointer;
@@ -249,6 +279,7 @@ td:first-child { text-align: left; font-weight: 500; }
   <div class="ctrl-group">
     <span class="ctrl-label">Period</span>
     <div class="btn-group">
+      <button class="btn" onclick="setQuickPeriod('mtd')" id="per-mtd">MTD</button>
       <button class="btn" onclick="setQuickPeriod('1m')"  id="per-1m">1M</button>
       <button class="btn" onclick="setQuickPeriod('3m')"  id="per-3m">3M</button>
       <button class="btn" onclick="setQuickPeriod('6m')"  id="per-6m">6M</button>
@@ -276,8 +307,20 @@ td:first-child { text-align: left; font-weight: 500; }
   </button>
 </div>
 
+<!-- ══════════════════════════════════════════════════════════ PAGE NAVIGATION -->
+<nav class="page-nav">
+  <div class="page-nav-tab active" id="nav-overview"  onclick="setPageTab('overview')">Overview</div>
+  <div class="page-nav-tab"        id="nav-returns"   onclick="setPageTab('returns')">Returns</div>
+  <div class="page-nav-tab"        id="nav-risk"      onclick="setPageTab('risk')">Risk Metrics</div>
+  <div class="page-nav-tab"        id="nav-averages"  onclick="setPageTab('averages')">Averages</div>
+  <div class="page-nav-tab"        id="nav-vsalloc"   onclick="setPageTab('vsalloc')">vs Allocate</div>
+</nav>
+
 <!-- ══════════════════════════════════════════════════════════ PAGE -->
 <div class="page">
+
+<!-- ▓▓▓ OVERVIEW PANE ▓▓▓ -->
+<div class="pane active" id="pane-overview">
 
   <!-- ── Summary pills ── -->
   <div class="card">
@@ -291,37 +334,46 @@ td:first-child { text-align: left; font-weight: 500; }
   <!-- ── Performance Chart ── -->
   <div class="card">
     <div class="card-hd">
-      <div class="title">📈 Indexed Performance
+      <div class="title">📈 Performance Charts
         <span class="amber-pill" id="chart-period-label">Since Inception</span>
       </div>
-      <div class="sub">Base = 100 at period start · Dashed = Allocate Schemes · Bold dashed = Category Average</div>
+      <div class="sub" id="chart-sub">Base = 100 at period start · Dashed = Allocate Schemes · Bold dashed = Category Average</div>
     </div>
     <div class="tab-bar">
       <div class="tab active" onclick="setChartView('perf')" id="tab-perf">Indexed Performance</div>
+      <div class="tab" onclick="setChartView('bar')"  id="tab-bar">Period Bar Comparison</div>
       <div class="tab" onclick="setChartView('mom')"  id="tab-mom">Month-on-Month Returns</div>
       <div class="tab" onclick="setChartView('avg')"  id="tab-avg">Category Avg vs Allocate</div>
     </div>
     <div class="chart-wrap">
-      <canvas id="mainChart" style="max-height:380px;"></canvas>
+      <canvas id="mainChart" style="max-height:420px;"></canvas>
     </div>
   </div>
+
+</div><!-- /pane-overview -->
+
+<!-- ▓▓▓ RETURNS PANE ▓▓▓ -->
+<div class="pane" id="pane-returns">
 
   <!-- ── Returns Table ── -->
   <div class="card">
     <div class="card-hd">
       <div class="title">📊 Returns Summary</div>
-      <div class="sub">Active column = selected period · Gold = Allocate · Blue-italic = Category Average</div>
+      <div class="sub">Active column = selected period · Gold = Allocate · Blue-italic = Category Average · SI columns use common base dates for fair comparison</div>
     </div>
     <div class="tbl-wrap">
       <table id="ret-table">
         <thead>
           <tr>
             <th>Fund / Scheme</th>
+            <th id="rh-mtd">MTD</th>
             <th id="rh-1m">1M</th>
             <th id="rh-3m">3M</th>
             <th id="rh-6m">6M</th>
             <th id="rh-ytd">YTD</th>
-            <th id="rh-si">Since Inception (CAGR)</th>
+            <th id="rh-si-eq"  title="CAGR from 21 Mar 2025 (Allocate Equity inception)">SI vs Equity<br><small style="font-weight:400;color:var(--muted)">from 21 Mar 25</small></th>
+            <th id="rh-si-ag"  title="CAGR from 27 Mar 2025 (Allocate Aggressive inception)">SI vs Aggressive<br><small style="font-weight:400;color:var(--muted)">from 27 Mar 25</small></th>
+            <th id="rh-si-mo"  title="CAGR from 17 Apr 2025 (Allocate Moderate inception)">SI vs Moderate<br><small style="font-weight:400;color:var(--muted)">from 17 Apr 25</small></th>
             <th>Incep. Date</th>
           </tr>
         </thead>
@@ -330,23 +382,28 @@ td:first-child { text-align: left; font-weight: 500; }
     </div>
   </div>
 
+</div><!-- /pane-returns -->
+
+<!-- ▓▓▓ RISK PANE ▓▓▓ -->
+<div class="pane" id="pane-risk">
+
   <!-- ── Risk Table ── -->
   <div class="card">
     <div class="card-hd">
       <div class="title">⚖️ Risk Metrics</div>
-      <div class="sub">Beta &amp; Alpha vs Allocate Equity · Sharpe &amp; Sortino: Rf = 6.5% p.a.</div>
+      <div class="sub">Sharpe = Return ÷ Std Dev · Sortino = Return ÷ Downside Std Dev · No risk-free rate deduction · Volatility = trading days only</div>
     </div>
     <div class="tbl-wrap">
       <table id="risk-table">
         <thead>
           <tr>
             <th>Fund / Scheme</th>
-            <th>Ann. Return</th>
+            <th>Ann. Return (CAGR)</th>
             <th>Ann. Volatility</th>
-            <th>Sharpe</th>
-            <th>Sortino</th>
-            <th>Beta</th>
-            <th>Alpha (p.a.)</th>
+            <th title="mean(daily_ret) / std(daily_ret) — daily units">Sharpe<br><small style="font-weight:400;color:var(--muted)">(Simple)</small></th>
+            <th title="Sharpe_simple × √252 — annualised">Sharpe<br><small style="font-weight:400;color:var(--muted)">(Ann.)</small></th>
+            <th title="mean(daily_ret) / std(neg_daily_ret) — daily units">Sortino<br><small style="font-weight:400;color:var(--muted)">(Simple)</small></th>
+            <th title="Sortino_simple × √252 — annualised">Sortino<br><small style="font-weight:400;color:var(--muted)">(Ann.)</small></th>
           </tr>
         </thead>
         <tbody id="risk-body"></tbody>
@@ -354,7 +411,7 @@ td:first-child { text-align: left; font-weight: 500; }
     </div>
   </div>
 
-  <!-- ── MoM Table ── -->
+  <!-- ── MoM Table (also in Returns pane) ── -->
   <div class="card">
     <div class="card-hd">
       <div class="title">📅 Month-on-Month Returns</div>
@@ -363,22 +420,92 @@ td:first-child { text-align: left; font-weight: 500; }
     <div class="tbl-wrap" id="mom-tbl-wrap"></div>
   </div>
 
-  <!-- ── Legend ── -->
-  <div class="legend-note">
+  <!-- shared legend -->
+  <div class="legend-note" id="legend-shared">
     <strong>Legend:</strong>
     🟨 Amber rows = Allocate Schemes &nbsp;|&nbsp;
-    🔵 Italic rows = Category Average (BAF Avg / MAF Avg) &nbsp;|&nbsp;
+    🔵 Italic rows = Category Average &nbsp;|&nbsp;
     <span class="pos">Green</span> = Positive &nbsp;|&nbsp; <span class="neg">Red</span> = Negative &nbsp;|&nbsp;
-    Sharpe &gt; 1 = Strong risk-adjusted return &nbsp;|&nbsp;
-    Sortino uses only downside volatility &nbsp;|&nbsp;
-    Beta &lt; 1 = Lower vol than benchmark &nbsp;|&nbsp;
-    Positive Alpha = Outperformance.<br/>
+    Sharpe &gt; 1 = Strong risk-adjusted return.<br/>
     <strong>Notes:</strong>
-    BAF inception: 21 Mar 2025 · MAF inception: 01 Jan 2025 · Allocate Moderate: 17 Apr 2025.
-    Beta/Alpha benchmarked vs Allocate Equity scheme.
-    YTD computed from 01 Jan of the current calendar year.
+    BAF: 21 Mar 2025 · MAF: 01 Jan 2025 · Allocate Moderate: 17 Apr 2025.
+    Volatility = trading days only (flat/weekend NAVs excluded). YTD from Dec 31 prior year.
+    1M = last complete month (<span id="lgd-1m-label">Feb 2026</span>). MTD = current month to date.
+    SI uses common Allocate inception dates as base. Sharpe = Return ÷ Std Dev. Sortino = Return ÷ Downside Std Dev. No Rf deduction.
   </div>
-</div>
+</div><!-- /pane-risk -->
+
+<!-- ▓▓▓ AVERAGES PANE ▓▓▓ -->
+<div class="pane" id="pane-averages">
+
+  <!-- Returns Comparison -->
+  <div class="card">
+    <div class="card-hd">
+      <div class="title">📊 Category Average Returns vs Allocate Schemes</div>
+      <div class="sub">Rows = periods · Cols = BAF Avg / MAF Avg / each Allocate scheme</div>
+    </div>
+    <div class="tbl-wrap">
+      <table id="avg-ret-table">
+        <thead>
+          <tr>
+            <th>Period</th>
+            <th class="b-baf" style="background:#1e40af">BAF Average</th>
+            <th class="b-maf" style="background:#166534">MAF Average</th>
+            <th style="background:#cc8f20">Allocate Moderate</th>
+            <th style="background:#c55a11">Allocate Aggressive</th>
+            <th style="background:#2A2BA1">Allocate Equity</th>
+          </tr>
+        </thead>
+        <tbody id="avg-ret-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Risk Comparison -->
+  <div class="card">
+    <div class="card-hd">
+      <div class="title">⚖️ Category Average Risk Metrics vs Allocate Schemes</div>
+      <div class="sub">Rows = metrics · Cols = BAF Avg / MAF Avg / each Allocate scheme · Ann. = Annualised</div>
+    </div>
+    <div class="tbl-wrap">
+      <table id="avg-risk-table">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th style="background:#1e40af">BAF Average</th>
+            <th style="background:#166534">MAF Average</th>
+            <th style="background:#cc8f20">Allocate Moderate</th>
+            <th style="background:#c55a11">Allocate Aggressive</th>
+            <th style="background:#2A2BA1">Allocate Equity</th>
+          </tr>
+        </thead>
+        <tbody id="avg-risk-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /pane-averages -->
+
+<!-- ▓▓▓ VS ALLOCATE PANE ▓▓▓ -->
+<div class="pane" id="pane-vsalloc">
+
+  <!-- Sub-tabs for which Allocate scheme -->
+  <div class="card" style="overflow:visible">
+    <div class="card-hd">
+      <div class="title">🎯 All Funds vs Allocate Schemes</div>
+      <div class="sub">Returns (MTD · 1M · 3M · 6M · SI) + Risk Metrics for the same period · SI uses each scheme's inception date</div>
+    </div>
+    <div class="tab-bar">
+      <div class="tab active" id="vsa-tab-equity"     onclick="setVsAllocTab('equity')">vs Allocate Equity</div>
+      <div class="tab"        id="vsa-tab-aggressive" onclick="setVsAllocTab('aggressive')">vs Allocate Aggressive</div>
+      <div class="tab"        id="vsa-tab-moderate"   onclick="setVsAllocTab('moderate')">vs Allocate Moderate</div>
+    </div>
+    <div class="tbl-wrap" id="vsalloc-tbl-wrap"></div>
+  </div>
+
+</div><!-- /pane-vsalloc -->
+
+</div><!-- /page -->
 
 <footer class="footer">
   <span>Ionic Allocate</span> &nbsp;·&nbsp; Angel Broking Limited &nbsp;·&nbsp; Internal Use Only
@@ -389,17 +516,20 @@ td:first-child { text-align: left; font-weight: 500; }
 <script>
 // ─── State ────────────────────────────────────────────────────────────────────
 let D = null;
-let activeCat    = 'ALL';
-let activePeriod = 'si';
-let activeChart  = 'perf';
-let customFrom   = null;   // Date object or null
-let customTo     = null;
-let mainChart    = null;
+let activeCat      = 'ALL';
+let activePeriod   = 'si';
+let activeChart    = 'perf';
+let activePageTab  = 'overview';
+let activeVsAlloc  = 'equity';
+let customFrom     = null;
+let customTo       = null;
+let mainChart      = null;
 
 const BAF_F  = ['Tata','Nippon','Edelweiss','Kotak','SBI','HDFC','ICICI'];
 const MAF_F  = ['Whiteoak','UTI','HDFC','Nippon','SBI','Kotak','DSP','ICICI'];
 const ALLOC  = ['Moderate','Aggressive','Equity'];
-const PER_DAYS = {'1m':30,'3m':91,'6m':182,'ytd':null,'si':null};
+// Chart cutoff: month offset from lastDate for each period (null = no cutoff)
+const PER_MONTHS = {'1m':null,'3m':3,'6m':6}; // 1m handled specially as "last complete month"
 
 // Brand palette
 const C_BAF   = ['#4472C4','#ED7D31','#70AD47','#FF0000','#7030A0','#00B0F0','#FFC000'];
@@ -428,6 +558,11 @@ function init(){
   document.getElementById('date-to').value   = maxD;
 
   document.getElementById('hdr-updated').textContent = fmtDate(D.last_updated);
+  // Dynamic 1M button label
+  const lbl1m = D.one_m_label || '1M';
+  document.getElementById('per-1m').textContent = lbl1m;
+  const lgd = document.getElementById('lgd-1m-label');
+  if(lgd) lgd.textContent = lbl1m;
   updateHeaderStats();
   renderAll();
 }
@@ -439,18 +574,20 @@ function setCategory(c){
   renderAll();
 }
 
+const ALL_PER_KEYS = ['mtd','1m','3m','6m','ytd','si'];
+
 function setQuickPeriod(p){
   activePeriod = p; customFrom = null; customTo = null;
   document.getElementById('date-from').value = '';
   document.getElementById('date-to').value = D.navs.BAF.dates.at(-1);
-  ['1m','3m','6m','ytd','si'].forEach(k=>{
-    const b=document.getElementById('per-'+k);
-    b.classList.toggle('active', k===p); b.classList.toggle('amber', k===p);
-    if(k!==p){ b.classList.remove('active','amber'); }
+  ALL_PER_KEYS.forEach(k=>{
+    const b=document.getElementById('per-'+k); if(!b)return;
+    b.classList.remove('active','amber');
   });
   document.getElementById('per-'+p).classList.add('active','amber');
-  document.getElementById('chart-period-label').textContent =
-    {'1m':'1 Month','3m':'3 Month','6m':'6 Month','ytd':'YTD','si':'Since Inception'}[p];
+  const lbl1m = D.one_m_label||'1M';
+  const perLabels = {'mtd':'MTD','1m':lbl1m,'3m':'3 Months','6m':'6 Months','ytd':'YTD','si':'Since Inception'};
+  document.getElementById('chart-period-label').textContent = perLabels[p]||p.toUpperCase();
   renderAll();
 }
 
@@ -459,8 +596,8 @@ function setCustomDate(){
   const t=document.getElementById('date-to').value;
   if(!f||!t) return;
   customFrom=new Date(f); customTo=new Date(t);
-  ['1m','3m','6m','ytd','si'].forEach(k=>{
-    document.getElementById('per-'+k).classList.remove('active','amber');
+  ALL_PER_KEYS.forEach(k=>{
+    const b=document.getElementById('per-'+k); if(b) b.classList.remove('active','amber');
   });
   activePeriod='custom';
   document.getElementById('chart-period-label').textContent = f+' → '+t;
@@ -469,20 +606,53 @@ function setCustomDate(){
 
 function setChartView(v){
   activeChart=v;
-  ['perf','mom','avg'].forEach(x=>{
+  ['perf','bar','mom','avg'].forEach(x=>{
     document.getElementById('tab-'+x).classList.toggle('active',x===v);
   });
+  const subs={
+    perf:'Base = 100 at period start · Dashed = Allocate Schemes · Bold dashed = Category Average',
+    bar:'All funds ranked by return for selected period · BAF = blue · MAF = green · Allocate = amber',
+    mom:'Month-on-Month returns · Grouped by category',
+    avg:'Category average vs each Allocate scheme · Indexed to 100'
+  };
+  document.getElementById('chart-sub').textContent=subs[v]||'';
   renderChart();
+}
+
+// ─── Page tab switching ───────────────────────────────────────────────────────
+const PAGE_TABS = ['overview','returns','risk','averages','vsalloc'];
+function setPageTab(tab){
+  activePageTab = tab;
+  PAGE_TABS.forEach(t=>{
+    document.getElementById('nav-'+t).classList.toggle('active', t===tab);
+    document.getElementById('pane-'+t).classList.toggle('active', t===tab);
+  });
+  renderAll();
+}
+
+function setVsAllocTab(scheme){
+  activeVsAlloc = scheme;
+  ['equity','aggressive','moderate'].forEach(s=>{
+    document.getElementById('vsa-tab-'+s).classList.toggle('active', s===scheme);
+  });
+  renderVsAllocate();
 }
 
 // ─── Master render ────────────────────────────────────────────────────────────
 function renderAll(){
   renderSummaryPills();
-  renderReturnsTable();
-  renderRiskTable();
-  renderMoMTable();
-  renderChart();
-  hlActiveCol();
+  if(activePageTab==='overview'){
+    renderChart();
+  } else if(activePageTab==='returns' || activePageTab==='risk'){
+    renderReturnsTable();
+    renderRiskTable();
+    renderMoMTable();
+    hlActiveCol();
+  } else if(activePageTab==='averages'){
+    renderAverages();
+  } else if(activePageTab==='vsalloc'){
+    renderVsAllocate();
+  }
 }
 
 // ─── Summary pills ────────────────────────────────────────────────────────────
@@ -523,11 +693,12 @@ function renderSummaryPills(){
     <div class="stat-pill ${p.cls}">
       <div class="sp-lbl">${p.lbl}</div>
       <div class="sp-val ${pctCls(p.val)}">${fmtPct(p.val)}</div>
-      <div class="sp-sub">${activePeriod==='si'?'Since Inception':activePeriod.toUpperCase()}</div>
+      <div class="sp-sub">${{'1m':'1M','3m':'3M','6m':'6M','ytd':'YTD','si':'SI vs Equity','custom':'Custom'}[activePeriod]||activePeriod.toUpperCase()}</div>
     </div>`).join('');
 
+  const perLabel = {'1m':'1 Month','3m':'3 Months','6m':'6 Months','ytd':'YTD','si':'SI vs Equity (21 Mar 25)','custom':'Custom Range'};
   document.getElementById('summary-subtitle').textContent =
-    `${activePeriod==='si'?'Since Inception':activePeriod==='custom'?'Custom Range':activePeriod.toUpperCase()} · ${activeCat==='ALL'?'All Funds':activeCat+' Only'}`;
+    `${perLabel[activePeriod]||activePeriod.toUpperCase()} · ${activeCat==='ALL'?'All Funds':activeCat+' Only'}`;
 }
 
 // ─── Returns table ────────────────────────────────────────────────────────────
@@ -536,7 +707,7 @@ function renderReturnsTable(){
   const body = document.getElementById('ret-body');
   body.innerHTML='';
   rows.forEach(r=>{
-    if(r.sep){ body.innerHTML+=`<tr class="sep-row"><td colspan="7"></td></tr>`; return; }
+    if(r.sep){ body.innerHTML+=`<tr class="sep-row"><td colspan="10"></td></tr>`; return; }
     const {name,m,cat,isAlloc,isAvg}=r;
     const badge = isAlloc ? `<span class="badge b-alloc">Allocate</span>`
                 : isAvg   ? `<span class="badge b-avg">Avg</span>`
@@ -545,58 +716,41 @@ function renderReturnsTable(){
     const tr=document.createElement('tr');
     if(isAlloc) tr.className='alloc-row';
     if(isAvg)   tr.className='avg-row';
-
-    // YTD: from Jan 1 of last_updated year
-    const ytd = computeYTD(r);
     tr.innerHTML=`
       <td>${name}${badge}</td>
+      <td class="${pctCls(m['mtd'])}">${fmtPct(m['mtd'])}</td>
       <td class="${pctCls(m['1m'])}">${fmtPct(m['1m'])}</td>
       <td class="${pctCls(m['3m'])}">${fmtPct(m['3m'])}</td>
       <td class="${pctCls(m['6m'])}">${fmtPct(m['6m'])}</td>
-      <td class="${pctCls(ytd)}">${fmtPct(ytd)}</td>
-      <td class="${pctCls(m.cagr)}">${fmtPct(m.cagr)}</td>
+      <td class="${pctCls(m['ytd'])}">${fmtPct(m['ytd'])}</td>
+      <td class="${pctCls(m['si_vs_equity'])}">${fmtPct(m['si_vs_equity'])}</td>
+      <td class="${pctCls(m['si_vs_aggressive'])}">${fmtPct(m['si_vs_aggressive'])}</td>
+      <td class="${pctCls(m['si_vs_moderate'])}">${fmtPct(m['si_vs_moderate'])}</td>
       <td style="color:var(--muted);font-size:11px">${m.inception_date||'—'}</td>`;
     body.appendChild(tr);
   });
   hlActiveCol();
 }
 
-function computeYTD(row){
-  if(row.isAvg){
-    // avg YTD across category
-    const funds = row.cat==='BAF' ? BAF_F : MAF_F;
-    const navKey = row.cat==='BAF' ? 'BAF' : 'MAF';
-    const vals = funds.map(f=>ytdFromNav(D.navs[navKey],f)).filter(v=>v!=null);
-    return vals.length ? avg(vals) : null;
-  }
-  const navKey = row.isAlloc ? row.navGroup : row.cat;
-  return ytdFromNav(D.navs[navKey], row.key);
-}
-
-function ytdFromNav(navData, fund){
-  const yr = new Date(D.last_updated).getFullYear();
-  const janFirst = `${yr}-01-01`;
-  const dates = navData.dates; const series = navData.series[fund];
-  if(!series) return null;
-  // find first date >= Jan 1
-  const startIdx = dates.findIndex(d=>d>=janFirst);
-  const lastIdx  = dates.length-1;
-  if(startIdx<0||!series[startIdx]||!series[lastIdx]) return null;
-  return series[lastIdx]/series[startIdx]-1;
-}
-
 function hlActiveCol(){
-  const colMap={'1m':1,'3m':2,'6m':3,'ytd':4,'si':5};
-  const hdMap={'1m':'rh-1m','3m':'rh-3m','6m':'rh-6m','ytd':'rh-ytd','si':'rh-si'};
-  Object.values(hdMap).forEach(id=>{
+  // td nth-child offset (1-based): col1=Fund, col2=MTD, col3=1M, col4=3M, col5=6M, col6=YTD, col7/8/9=SI
+  const colMap={'mtd':1,'1m':2,'3m':3,'6m':4,'ytd':5};
+  const hdMap={'mtd':'rh-mtd','1m':'rh-1m','3m':'rh-3m','6m':'rh-6m','ytd':'rh-ytd'};
+  const siHds=['rh-si-eq','rh-si-ag','rh-si-mo'];
+  // clear all headers + cell highlights
+  [...Object.values(hdMap),...siHds].forEach(id=>{
     const el=document.getElementById(id); if(el) el.classList.remove('amber-hd');
   });
-  if(activePeriod!=='custom' && hdMap[activePeriod]){
-    const el=document.getElementById(hdMap[activePeriod]); if(el) el.classList.add('amber-hd');
-  }
   document.querySelectorAll('#ret-body tr:not(.sep-row) td').forEach(td=>td.classList.remove('hl'));
-  const ci = activePeriod!=='custom' ? colMap[activePeriod] : null;
-  if(ci) document.querySelectorAll(`#ret-body tr:not(.sep-row) td:nth-child(${ci+1})`).forEach(td=>td.classList.add('hl'));
+
+  if(activePeriod==='si'){
+    siHds.forEach(id=>{const el=document.getElementById(id);if(el)el.classList.add('amber-hd');});
+    [6,7,8].forEach(ci=>document.querySelectorAll(`#ret-body tr:not(.sep-row) td:nth-child(${ci+1})`).forEach(td=>td.classList.add('hl')));
+  } else if(activePeriod!=='custom' && hdMap[activePeriod]){
+    document.getElementById(hdMap[activePeriod]).classList.add('amber-hd');
+    const ci=colMap[activePeriod];
+    if(ci) document.querySelectorAll(`#ret-body tr:not(.sep-row) td:nth-child(${ci+1})`).forEach(td=>td.classList.add('hl'));
+  }
 }
 
 // ─── Risk table ───────────────────────────────────────────────────────────────
@@ -617,10 +771,10 @@ function renderRiskTable(){
       <td>${name}${badge}</td>
       <td class="${pctCls(m.cagr)}">${fmtPct(m.cagr)}</td>
       <td>${fmtPct(m.ann_vol)}</td>
+      <td class="${ratioCls(m.sharpe_simple)}">${fmtRatio(m.sharpe_simple)}</td>
       <td class="${ratioCls(m.sharpe)}">${fmtRatio(m.sharpe)}</td>
-      <td class="${ratioCls(m.sortino)}">${fmtRatio(m.sortino)}</td>
-      <td>${fmtRatio(m.beta)}</td>
-      <td class="${pctCls(m.alpha)}">${fmtPct(m.alpha)}</td>`;
+      <td class="${ratioCls(m.sortino_simple)}">${fmtRatio(m.sortino_simple)}</td>
+      <td class="${ratioCls(m.sortino)}">${fmtRatio(m.sortino)}</td>`;
     body.appendChild(tr);
   });
 }
@@ -683,9 +837,97 @@ function renderChart(){
   const ctx=document.getElementById('mainChart').getContext('2d');
   if(mainChart){mainChart.destroy();mainChart=null;}
 
-  if(activeChart==='perf')  mainChart=buildPerfChart(ctx);
+  if(activeChart==='perf')     mainChart=buildPerfChart(ctx);
+  else if(activeChart==='bar') mainChart=buildBarChart(ctx);
   else if(activeChart==='mom') mainChart=buildMoMChart(ctx);
   else if(activeChart==='avg') mainChart=buildAvgChart(ctx);
+}
+
+/* ── Bar chart — all funds vs selected period ── */
+function buildBarChart(ctx){
+  // Determine which return key to show
+  const pKey = PERIOD_KEY(activePeriod);  // e.g. '1m', '3m', '6m', 'ytd', 'cagr', 'si_vs_equity'
+
+  // Collect all entries: {label, value, color}
+  const entries=[];
+
+  const grpFilter = g => activeCat==='ALL' || activeCat===g;
+
+  if(grpFilter('BAF')){
+    BAF_F.forEach((f,i)=>{
+      const m=D.metrics.BAF[f]; if(!m)return;
+      const v=m[pKey]; if(v==null)return;
+      entries.push({label:D.fund_labels.BAF[f], val:v, color:C_BAF[i%C_BAF.length]});
+    });
+    // BAF avg
+    const bm=D.metrics.BAF_avg;
+    if(bm&&bm[pKey]!=null) entries.push({label:'BAF Avg', val:bm[pKey], color:'#6c6dca', avg:true});
+  }
+
+  if(grpFilter('MAF')){
+    MAF_F.forEach((f,i)=>{
+      const m=D.metrics.MAF[f]; if(!m)return;
+      const v=m[pKey]; if(v==null)return;
+      entries.push({label:D.fund_labels.MAF[f], val:v, color:C_MAF[i%C_MAF.length]});
+    });
+    const mm=D.metrics.MAF_avg;
+    if(mm&&mm[pKey]!=null) entries.push({label:'MAF Avg', val:mm[pKey], color:'#4a9c6b', avg:true});
+  }
+
+  // Allocate schemes
+  ALLOC.forEach((f,i)=>{
+    const m=D.metrics.Allocate_BAF[f]; if(!m)return;
+    const v=m[pKey]; if(v==null)return;
+    entries.push({label:D.fund_labels.Allocate[f], val:v, color:C_ALLOC[i], alloc:true});
+  });
+
+  // Sort descending by return
+  entries.sort((a,b)=>b.val-a.val);
+
+  const labels = entries.map(e=>e.label);
+  const vals   = entries.map(e=>+(e.val*100).toFixed(2));
+  const colors = entries.map(e=>e.val>=0?e.color:e.color+'cc');
+  const borderColors = entries.map(e=>e.alloc?'#cc8f20':e.avg?'#3a3b8a':e.color);
+  const borderWidths = entries.map(e=>e.alloc||e.avg?2.5:1);
+
+  const periodLabel = {
+    '1m':'1 Month','3m':'3 Months','6m':'6 Months','ytd':'YTD',
+    'cagr':'Since Inception (CAGR)','si_vs_equity':'SI vs Equity (21 Mar 25)',
+    'si_vs_aggressive':'SI vs Aggressive (27 Mar 25)','si_vs_moderate':'SI vs Moderate (17 Apr 25)'
+  }[pKey]||pKey;
+
+  return new Chart(ctx,{
+    type:'bar',
+    data:{
+      labels,
+      datasets:[{
+        label:periodLabel+' Return (%)',
+        data:vals,
+        backgroundColor:colors,
+        borderColor:borderColors,
+        borderWidth:borderWidths,
+        borderRadius:4,
+      }]
+    },
+    options:{
+      indexAxis:'y',
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{label:c=>' '+(c.raw>=0?'+':'')+c.raw.toFixed(2)+'%'}},
+      },
+      scales:{
+        x:{
+          ticks:{font:{size:11},callback:v=>v+'%'},
+          grid:{color:'#f0f0f0'},
+          title:{display:true,text:periodLabel+' Return (%)',font:{size:11}},
+          // draw zero line
+          border:{dash:[4,4]},
+        },
+        y:{ticks:{font:{size:11}},grid:{display:false}},
+      }
+    }
+  });
 }
 
 /* ── Perf chart (indexed to 100) ── */
@@ -696,9 +938,7 @@ function buildPerfChart(ctx){
 
   const lastDate=new Date(D.last_updated);
   let cutoff=null;
-  if(activePeriod==='custom'&&customFrom) cutoff=customFrom;
-  else if(activePeriod==='ytd') cutoff=new Date(lastDate.getFullYear(),0,1);
-  else if(PER_DAYS[activePeriod]){const d=new Date(lastDate);d.setDate(d.getDate()-PER_DAYS[activePeriod]);cutoff=d;}
+  cutoff = getChartCutoff(lastDate);
 
   const datasets=[]; const addedAlloc=new Set();
 
@@ -790,9 +1030,7 @@ function buildAvgChart(ctx){
 
   const lastDate=new Date(D.last_updated);
   let cutoff=null;
-  if(activePeriod==='custom'&&customFrom) cutoff=customFrom;
-  else if(activePeriod==='ytd') cutoff=new Date(lastDate.getFullYear(),0,1);
-  else if(PER_DAYS[activePeriod]){const d=new Date(lastDate);d.setDate(d.getDate()-PER_DAYS[activePeriod]);cutoff=d;}
+  cutoff = getChartCutoff(lastDate);
 
   const datasets=[]; const addedAlloc=new Set();
 
@@ -881,26 +1119,157 @@ function buildRows(){
   return rows;
 }
 
+// ─── Averages tab ─────────────────────────────────────────────────────────────
+function renderAverages(){
+  const lbl1m = D.one_m_label||'1M';
+  const bafA  = D.metrics.BAF_avg;
+  const mafA  = D.metrics.MAF_avg;
+  const modA  = D.metrics.Allocate_BAF.Moderate;
+  const agA   = D.metrics.Allocate_BAF.Aggressive;
+  const eqA   = D.metrics.Allocate_BAF.Equity;
+
+  // ── Returns comparison table ──────────────────────────────
+  const retPeriods = [
+    {key:'mtd',   label:'MTD'},
+    {key:'1m',    label:`1M (${lbl1m})`},
+    {key:'3m',    label:'3M'},
+    {key:'6m',    label:'6M'},
+    {key:'ytd',   label:'YTD'},
+    {key:'si_vs_equity',     label:'SI vs Equity (21 Mar 25)'},
+    {key:'si_vs_aggressive', label:'SI vs Aggressive (27 Mar 25)'},
+    {key:'si_vs_moderate',   label:'SI vs Moderate (17 Apr 25)'},
+  ];
+  const rb = document.getElementById('avg-ret-body');
+  rb.innerHTML = retPeriods.map(p=>{
+    const cols = [bafA, mafA, modA, agA, eqA];
+    return `<tr>
+      <td style="font-weight:600">${p.label}</td>
+      ${cols.map(m=>`<td class="${pctCls(m?m[p.key]:null)}">${fmtPct(m?m[p.key]:null)}</td>`).join('')}
+    </tr>`;
+  }).join('');
+
+  // ── Risk metrics comparison table ─────────────────────────
+  const riskRows = [
+    {key:'cagr',          label:'CAGR (Since Inception)', fmt:fmtPct},
+    {key:'ann_vol',       label:'Ann. Volatility',         fmt:fmtPct},
+    {key:'sharpe_simple', label:'Sharpe (Simple)',         fmt:fmtRatio},
+    {key:'sharpe',        label:'Sharpe (Annualised)',     fmt:fmtRatio},
+    {key:'sortino_simple',label:'Sortino (Simple)',        fmt:fmtRatio},
+    {key:'sortino',       label:'Sortino (Annualised)',    fmt:fmtRatio},
+  ];
+  const rib = document.getElementById('avg-risk-body');
+  rib.innerHTML = riskRows.map(r=>{
+    const cols = [bafA, mafA, modA, agA, eqA];
+    const isAlpha = false;
+    const isRatio = r.key.startsWith('sharpe')||r.key.startsWith('sortino');
+    return `<tr>
+      <td style="font-weight:600">${r.label}</td>
+      ${cols.map(m=>{
+        const v = m?m[r.key]:null;
+        const cls = isAlpha?pctCls(v):isRatio?ratioCls(v):'';
+        return `<td class="${cls}">${r.fmt(v)}</td>`;
+      }).join('')}
+    </tr>`;
+  }).join('');
+}
+
+// ─── vs Allocate tab ──────────────────────────────────────────────────────────
+function renderVsAllocate(){
+  const scheme    = activeVsAlloc;  // 'equity' | 'aggressive' | 'moderate'
+  const schemeKey = scheme==='equity'?'Equity':scheme==='aggressive'?'Aggressive':'Moderate';
+  const siKey     = `si_vs_${scheme}`;
+  const siDate    = D.si_dates[scheme];
+  const lbl1m     = D.one_m_label||'1M';
+
+  const wrap = document.getElementById('vsalloc-tbl-wrap');
+
+  // Build rows: Allocate scheme first, then BAF funds, then MAF funds
+  const rowDefs = [];
+  // Allocate scheme (benchmark)
+  const allocM = D.metrics.Allocate_BAF[schemeKey];
+  rowDefs.push({m:allocM, name:D.fund_labels.Allocate[schemeKey], isBenchmark:true, cat:'Allocate'});
+  // BAF avg
+  rowDefs.push({sep:true, label:'BAF Funds'});
+  rowDefs.push({m:D.metrics.BAF_avg, name:'BAF Category Average', isAvg:true, cat:'BAF'});
+  BAF_F.forEach(f=>rowDefs.push({m:D.metrics.BAF[f], name:D.fund_labels.BAF[f], cat:'BAF'}));
+  // MAF avg
+  rowDefs.push({sep:true, label:'MAF Funds'});
+  rowDefs.push({m:D.metrics.MAF_avg, name:'MAF Category Average', isAvg:true, cat:'MAF'});
+  MAF_F.forEach(f=>rowDefs.push({m:D.metrics.MAF[f], name:D.fund_labels.MAF[f], cat:'MAF'}));
+
+  let html = `<table><thead><tr>
+    <th>Fund / Scheme</th>
+    <th>MTD</th>
+    <th>1M (${lbl1m})</th>
+    <th>3M</th>
+    <th>6M</th>
+    <th>YTD</th>
+    <th title="from ${siDate}">SI (from ${siDate})</th>
+    <th>Ann. Vol</th>
+    <th>Sharpe (Simple)</th>
+    <th>Sharpe (Ann.)</th>
+    <th>Sortino (Simple)</th>
+    <th>Sortino (Ann.)</th>
+  </tr></thead><tbody>`;
+
+  rowDefs.forEach(r=>{
+    if(r.sep){
+      html+=`<tr class="sep-row"><td colspan="12" style="text-align:left;font-weight:700;font-size:11px;padding:4px 13px;background:var(--indigo-light);color:var(--indigo);height:auto">${r.label}</td></tr>`;
+      return;
+    }
+    const {m,name,isBenchmark,isAvg,cat} = r;
+    let badge = '';
+    if(isBenchmark) badge=`<span class="badge b-alloc">Allocate</span>`;
+    else if(isAvg)  badge=`<span class="badge b-avg">Avg</span>`;
+    else if(cat==='BAF') badge=`<span class="badge b-baf">BAF</span>`;
+    else badge=`<span class="badge b-maf">MAF</span>`;
+    const rowCls = isBenchmark?'alloc-row':isAvg?'avg-row':'';
+    html+=`<tr class="${rowCls}">
+      <td>${name}${badge}</td>
+      <td class="${pctCls(m?.mtd)}">${fmtPct(m?.mtd)}</td>
+      <td class="${pctCls(m?.['1m'])}">${fmtPct(m?.['1m'])}</td>
+      <td class="${pctCls(m?.['3m'])}">${fmtPct(m?.['3m'])}</td>
+      <td class="${pctCls(m?.['6m'])}">${fmtPct(m?.['6m'])}</td>
+      <td class="${pctCls(m?.ytd)}">${fmtPct(m?.ytd)}</td>
+      <td class="${pctCls(m?.[siKey])}">${fmtPct(m?.[siKey])}</td>
+      <td>${fmtPct(m?.ann_vol)}</td>
+      <td class="${ratioCls(m?.sharpe_simple)}">${fmtRatio(m?.sharpe_simple)}</td>
+      <td class="${ratioCls(m?.sharpe)}">${fmtRatio(m?.sharpe)}</td>
+      <td class="${ratioCls(m?.sortino_simple)}">${fmtRatio(m?.sortino_simple)}</td>
+      <td class="${ratioCls(m?.sortino)}">${fmtRatio(m?.sortino)}</td>
+    </tr>`;
+  });
+
+  html+='</tbody></table>';
+  wrap.innerHTML = html;
+}
+
 // ─── Export ───────────────────────────────────────────────────────────────────
 function exportToExcel(){
   if(!D||typeof XLSX==='undefined'){alert('Data not loaded');return;}
   const wb=XLSX.utils.book_new();
   const rows=buildRows().filter(r=>!r.sep);
 
+  const lbl1m = D.one_m_label||'1M';
   // Returns sheet
-  const r1=[['Fund','Category','1M','3M','6M','YTD','Since Inception (CAGR)','Inception Date']];
+  const r1=[['Fund','Category','MTD',`1M (${lbl1m})`,'3M','6M','YTD',
+    'SI vs Equity (21 Mar 25)','SI vs Aggressive (27 Mar 25)','SI vs Moderate (17 Apr 25)','Inception Date']];
   rows.forEach(r=>r1.push([r.name,r.isAvg?'Avg':r.isAlloc?'Allocate':r.cat,
-    pctRaw(r.m['1m']),pctRaw(r.m['3m']),pctRaw(r.m['6m']),pctRaw(computeYTD(r)),pctRaw(r.m.cagr),r.m.inception_date||'—']));
+    pctRaw(r.m['mtd']??null),pctRaw(r.m['1m']??null),pctRaw(r.m['3m']??null),
+    pctRaw(r.m['6m']??null),pctRaw(r.m['ytd']??null),
+    pctRaw(r.m['si_vs_equity']??null),pctRaw(r.m['si_vs_aggressive']??null),pctRaw(r.m['si_vs_moderate']??null),
+    r.m.inception_date||'—']));
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(r1),'Returns');
 
   // Risk sheet
-  const r2=[['Fund','Category','Ann. Return','Ann. Volatility','Sharpe','Sortino','Beta','Alpha']];
+  const r2=[['Fund','Category','Ann. Return (CAGR)','Ann. Volatility',
+    'Sharpe (Simple)','Sharpe (Ann.)','Sortino (Simple)','Sortino (Ann.)']];
   rows.forEach(r=>r2.push([r.name,r.isAvg?'Avg':r.isAlloc?'Allocate':r.cat,
     pctRaw(r.m.cagr),pctRaw(r.m.ann_vol),
-    r.m.sharpe!=null?r.m.sharpe.toFixed(2):'N/A',
-    r.m.sortino!=null?r.m.sortino.toFixed(2):'N/A',
-    r.m.beta!=null?r.m.beta.toFixed(2):'N/A',
-    pctRaw(r.m.alpha)]));
+    r.m.sharpe_simple!=null?r.m.sharpe_simple.toFixed(4):'N/A',
+    r.m.sharpe!=null?r.m.sharpe.toFixed(4):'N/A',
+    r.m.sortino_simple!=null?r.m.sortino_simple.toFixed(4):'N/A',
+    r.m.sortino!=null?r.m.sortino.toFixed(4):'N/A']));
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(r2),'Risk Metrics');
 
   // MoM sheet
@@ -924,7 +1293,27 @@ function exportToExcel(){
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const PERIOD_KEY = p=>({'1m':'1m','3m':'3m','6m':'6m','ytd':'ytd','si':'cagr','custom':'cagr'}[p]||'cagr');
+// Maps activePeriod → the metric key in data.json
+const PERIOD_KEY = p=>({'mtd':'mtd','1m':'1m','3m':'3m','6m':'6m','ytd':'ytd','si':'si_vs_equity','custom':'si_vs_equity'}[p]||'si_vs_equity');
+
+// Compute chart cutoff date for a given period
+function getChartCutoff(lastDate){
+  if(activePeriod==='custom'&&customFrom) return customFrom;
+  if(activePeriod==='ytd')  return new Date(lastDate.getFullYear()-1,11,31);
+  if(activePeriod==='si')   return null;
+  if(activePeriod==='mtd'){
+    // from start of current month (= end of prior month)
+    return new Date(lastDate.getFullYear(), lastDate.getMonth(), 0);
+  }
+  if(activePeriod==='1m'){
+    // from start of last complete month (= end of 2 months ago)
+    return new Date(lastDate.getFullYear(), lastDate.getMonth()-1, 0);
+  }
+  if(PER_MONTHS[activePeriod]){
+    const d=new Date(lastDate); d.setMonth(d.getMonth()-PER_MONTHS[activePeriod]); return d;
+  }
+  return null;
+}
 const avg = arr=>arr.reduce((a,b)=>a+b,0)/arr.length;
 
 function fmtPct(v){

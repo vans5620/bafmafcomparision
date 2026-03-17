@@ -8,7 +8,7 @@ Usage:
   python update_data.py
 
 Requirements:
-  pip install pandas openpyxl numpy
+  pip install pandas openpyxl numpy python-dateutil
 """
 
 import pandas as pd
@@ -16,80 +16,147 @@ import numpy as np
 import json
 import os
 from datetime import date
+from dateutil.relativedelta import relativedelta
 
-# ── Config: Edit these paths if you move files ──────────────────
-EXCEL_FILE = "Allocate MAF BAF Data.xlsx"   # Path relative to this script
-OUTPUT_JSON = "data.json"                   # Output (same folder as index.html)
-RF = 0.065                                  # Risk-free rate (6.5% India proxy)
+# ── Config ───────────────────────────────────────────────────────
+EXCEL_FILE   = "Allocate MAF BAF Data.xlsx"
+OUTPUT_JSON  = "data.json"
 TRADING_DAYS = 252
+
+# Common comparison base-dates for Since-Inception returns
+SI_EQUITY_DATE      = "2025-03-21"   # Allocate Equity inception
+SI_AGGRESSIVE_DATE  = "2025-03-27"   # Allocate Aggressive inception
+SI_MODERATE_DATE    = "2025-04-17"   # Allocate Moderate inception
 # ────────────────────────────────────────────────────────────────
 
-def compute_metrics(df, fund, benchmark_col='Equity'):
+
+def compute_metrics(df, fund):
+    """
+    Compute full metric set for 'fund' in DataFrame 'df'.
+
+    Period returns:
+      mtd    = current month-to-date (from last month-end close)
+      1m     = last COMPLETE calendar month return (e.g. Feb if today is March)
+      3m/6m  = exact 3 / 6 calendar months back (relativedelta)
+      ytd    = from Dec 31 of prior year
+      si_vs_* = CAGR from each Allocate scheme's inception date
+
+    Sharpe / Sortino — no risk-free rate:
+      sharpe_simple  = mean(trading_ret) / std(trading_ret)       [daily]
+      sharpe         = sharpe_simple * sqrt(252)                   [annualised]
+      sortino_simple = mean(trading_ret) / std(neg_trading_ret)    [daily]
+      sortino        = sortino_simple * sqrt(252)                  [annualised]
+
+    Beta / Alpha: NOT computed (no benchmark index data available).
+    """
     mask = df[fund].notna()
-    fund_df = df[mask][['Date', fund]].copy().reset_index(drop=True)
-    if len(fund_df) < 10:
+    fd   = df[mask][['Date', fund]].copy().reset_index(drop=True)
+    if len(fd) < 10:
         return None
 
-    last_date = df['Date'].iloc[-1]
-    start_nav  = fund_df[fund].iloc[0]
-    end_nav    = df[mask][fund].iloc[-1]
-    start_date = fund_df['Date'].iloc[0]
+    last_date  = df['Date'].iloc[-1]
+    start_nav  = float(fd[fund].iloc[0])
+    end_nav    = float(df[mask][fund].iloc[-1])
+    start_date = fd['Date'].iloc[0]
     years      = (last_date - start_date).days / 365.25
     cagr       = float((end_nav / start_nav) ** (1.0 / years) - 1) if years > 0 else 0.0
 
-    daily_ret = fund_df[fund].pct_change().dropna().values
-    ann_vol   = float(np.std(daily_ret, ddof=1) * np.sqrt(TRADING_DAYS))
-    sharpe    = float((cagr - RF) / ann_vol) if ann_vol > 0 else None
+    # ── Volatility (trading-day only, excludes flat weekend/holiday fills) ────
+    all_ret     = fd[fund].pct_change().dropna().values
+    trading_ret = all_ret[all_ret != 0]
+    if len(trading_ret) < 10:
+        trading_ret = all_ret
 
-    # Sortino: downside deviation only
-    neg_ret = daily_ret[daily_ret < 0]
+    std_all = float(np.std(trading_ret, ddof=1))
+    ann_vol = std_all * np.sqrt(TRADING_DAYS)
+    mean_r  = float(np.mean(trading_ret))
+
+    # ── Sharpe (no Rf) ───────────────────────────────────────────────────────
+    sharpe_simple = float(mean_r / std_all) if std_all > 0 else None
+    sharpe        = float(sharpe_simple * np.sqrt(TRADING_DAYS)) if sharpe_simple is not None else None
+
+    # ── Sortino (no Rf) ──────────────────────────────────────────────────────
+    neg_ret = trading_ret[trading_ret < 0]
     if len(neg_ret) > 1:
-        dd      = float(np.std(neg_ret, ddof=1) * np.sqrt(TRADING_DAYS))
-        sortino = float((cagr - RF) / dd) if dd > 0 else None
+        std_neg        = float(np.std(neg_ret, ddof=1))
+        sortino_simple = float(mean_r / std_neg) if std_neg > 0 else None
+        sortino        = float(sortino_simple * np.sqrt(TRADING_DAYS)) if sortino_simple is not None else None
     else:
-        sortino = None
+        sortino_simple = sortino = None
 
-    # Beta & Alpha vs benchmark
-    beta, alpha = None, None
-    if benchmark_col in df.columns:
-        both = df[fund].notna() & df[benchmark_col].notna()
-        al   = df[both][[fund, benchmark_col]].copy().reset_index(drop=True)
-        if len(al) >= 30:
-            fr = al[fund].pct_change().dropna().values
-            br = al[benchmark_col].pct_change().dropna().values
-            n  = min(len(fr), len(br))
-            fr, br = fr[:n], br[:n]
-            bv = float(np.var(br, ddof=1))
-            if bv > 0 and n >= 30:
-                beta = float(np.cov(fr, br, ddof=1)[0, 1] / bv)
-                b_s  = df[df[benchmark_col].notna()][['Date', benchmark_col]].reset_index(drop=True)
-                b_y  = (last_date - b_s['Date'].iloc[0]).days / 365.25
-                bench_cagr = float((b_s[benchmark_col].iloc[-1] / b_s[benchmark_col].iloc[0]) ** (1/b_y) - 1) if b_y > 0 else 0.0
-                alpha = float(cagr - (RF + beta * (bench_cagr - RF)))
+    # ── Period returns ────────────────────────────────────────────────────────
+    def _nav_at_or_before(target_ts):
+        sub = fd[fd['Date'] <= target_ts]
+        return float(sub[fund].iloc[-1]) if len(sub) > 0 else None
 
-    def point_ret(days_back):
-        target = last_date - pd.Timedelta(days=days_back)
-        sub = fund_df[fund_df['Date'] <= target]
-        if len(sub) == 0: return None
-        return float(float(end_nav) / float(sub[fund].iloc[-1]) - 1)
+    # MTD: from last month-end to today
+    first_curr_month = pd.Timestamp(last_date.year, last_date.month, 1)
+    prev_month_end   = first_curr_month - pd.Timedelta(days=1)
+    n_mtd = _nav_at_or_before(prev_month_end)
+    mtd   = float(end_nav / n_mtd - 1) if n_mtd else None
 
-    return {
-        'cagr':           round(cagr, 6),
-        'ann_vol':        round(ann_vol, 6),
-        'sharpe':         round(sharpe, 4)  if sharpe  is not None else None,
-        'sortino':        round(sortino, 4) if sortino is not None else None,
-        'beta':           round(beta, 4)    if beta    is not None else None,
-        'alpha':          round(alpha, 6)   if alpha   is not None else None,
-        '1m':             round(point_ret(30),  6) if point_ret(30)  else None,
-        '3m':             round(point_ret(91),  6) if point_ret(91)  else None,
-        '6m':             round(point_ret(182), 6) if point_ret(182) else None,
-        'inception_date': str(start_date.date()),
+    # 1M: last COMPLETE calendar month (e.g. Feb if today is March)
+    first_prev_month  = pd.Timestamp(prev_month_end.year, prev_month_end.month, 1)
+    two_prev_month_end = first_prev_month - pd.Timedelta(days=1)
+    n_1m_end   = _nav_at_or_before(prev_month_end)
+    n_1m_start = _nav_at_or_before(two_prev_month_end)
+    r1m = float(n_1m_end / n_1m_start - 1) if (n_1m_end and n_1m_start) else None
+
+    # 3M / 6M: exact calendar months back from last_date
+    def point_ret(months_back):
+        target = last_date - relativedelta(months=months_back)
+        sub    = fd[fd['Date'] <= target]
+        return float(end_nav / float(sub[fund].iloc[-1]) - 1) if len(sub) > 0 else None
+
+    # YTD: from Dec 31 of prior year
+    def ytd_ret():
+        dec31 = pd.Timestamp(last_date.year - 1, 12, 31)
+        if start_date > dec31:
+            return None
+        n = _nav_at_or_before(dec31)
+        return float(end_nav / n - 1) if n else None
+
+    # SI vs each Allocate base date
+    def si_vs(base_date_str):
+        base_dt = pd.Timestamp(base_date_str)
+        sub     = fd[fd['Date'] <= base_dt]
+        if len(sub) == 0:
+            s_nav, s_date = start_nav, start_date
+        else:
+            s_nav  = float(sub[fund].iloc[-1])
+            s_date = sub['Date'].iloc[-1]
+        yrs = (last_date - s_date).days / 365.25
+        return float((end_nav / s_nav) ** (1.0 / yrs) - 1) if yrs > 0 else None
+
+    r3m  = point_ret(3)
+    r6m  = point_ret(6)
+    ytd  = ytd_ret()
+    r1m_label = prev_month_end.strftime("%b %Y")   # e.g. "Feb 2026"
+
+    m = {
+        'cagr':            round(cagr, 6),
+        'ann_vol':         round(float(ann_vol), 6),
+        'sharpe_simple':   round(sharpe_simple, 4) if sharpe_simple is not None else None,
+        'sharpe':          round(sharpe, 4)         if sharpe is not None else None,
+        'sortino_simple':  round(sortino_simple, 4) if sortino_simple is not None else None,
+        'sortino':         round(sortino, 4)         if sortino is not None else None,
+        # Period returns
+        'mtd':             round(mtd, 6)  if mtd  is not None else None,
+        '1m':              round(r1m, 6)  if r1m  is not None else None,
+        '1m_label':        r1m_label,
+        '3m':              round(r3m, 6)  if r3m  is not None else None,
+        '6m':              round(r6m, 6)  if r6m  is not None else None,
+        'ytd':             round(ytd, 6)  if ytd  is not None else None,
+        'si_vs_equity':    round(si_vs(SI_EQUITY_DATE),     6) if si_vs(SI_EQUITY_DATE)     is not None else None,
+        'si_vs_aggressive':round(si_vs(SI_AGGRESSIVE_DATE), 6) if si_vs(SI_AGGRESSIVE_DATE) is not None else None,
+        'si_vs_moderate':  round(si_vs(SI_MODERATE_DATE),   6) if si_vs(SI_MODERATE_DATE)   is not None else None,
+        'inception_date':  str(start_date.date()),
     }
+    return m
 
 
 def build_nav_series(df, funds, sample_every=3):
-    """Sample every Nth row for a lean JSON; always include the last row."""
-    out = {'dates': [], 'series': {f: [] for f in funds}}
+    out     = {'dates': [], 'series': {f: [] for f in funds}}
     sampled = df.iloc[::sample_every].copy()
     if df.index[-1] not in sampled.index:
         sampled = pd.concat([sampled, df.iloc[[-1]]])
@@ -104,37 +171,41 @@ def build_nav_series(df, funds, sample_every=3):
 
 
 def monthly_returns(df, funds):
-    """Last-trading-day-of-month returns for each fund."""
-    df2 = df.copy()
+    df2       = df.copy()
     df2['YM'] = df2['Date'].dt.to_period('M')
     month_end = df2.groupby('YM').last().reset_index()
-    result = {}
+    result    = {}
     for fund in funds:
         valid = month_end[month_end[fund].notna()].reset_index(drop=True)
         rets  = {}
         for i in range(1, len(valid)):
-            ym  = str(valid['YM'].iloc[i])
+            ym       = str(valid['YM'].iloc[i])
             nav_cur  = float(valid[fund].iloc[i])
             nav_prev = float(valid[fund].iloc[i - 1])
-            rets[ym]  = round(float(nav_cur / nav_prev - 1), 6)
+            rets[ym] = round(float(nav_cur / nav_prev - 1), 6)
         result[fund] = rets
     return result
 
 
 def cat_avg_monthly(mom_dict):
-    """Average monthly return across all funds in a category."""
     months = sorted({m for f in mom_dict.values() for m in f.keys()})
     return {m: round(float(np.mean([v[m] for v in mom_dict.values() if m in v])), 6)
             for m in months}
 
 
 def cat_avg_metrics(m_dict):
-    """Average of each metric across a category of funds."""
-    keys = ['1m', '3m', '6m', 'cagr', 'ann_vol', 'sharpe', 'sortino', 'beta', 'alpha']
-    out  = {}
+    keys = [
+        'mtd', '1m', '3m', '6m', 'ytd', 'cagr', 'ann_vol',
+        'sharpe_simple', 'sharpe', 'sortino_simple', 'sortino',
+        'si_vs_equity', 'si_vs_aggressive', 'si_vs_moderate',
+    ]
+    out = {}
     for k in keys:
         vals = [m[k] for m in m_dict.values() if m and m.get(k) is not None]
         out[k] = round(float(np.mean(vals)), 6) if vals else None
+    # carry over label from first valid fund
+    first = next((m for m in m_dict.values() if m), None)
+    out['1m_label']       = first['1m_label'] if first else ''
     out['inception_date'] = 'Avg'
     return out
 
@@ -147,17 +218,14 @@ def main():
     print(f"Reading: {excel_path}")
     baf_df = pd.read_excel(excel_path, sheet_name='BAF', parse_dates=['Date'])
     maf_df = pd.read_excel(excel_path, sheet_name='MAF', parse_dates=['Date'])
-
-    baf_last = baf_df['Date'].iloc[-1].date()
-    maf_last = maf_df['Date'].iloc[-1].date()
-    print(f"  BAF: {len(baf_df)} rows  (last: {baf_last})")
-    print(f"  MAF: {len(maf_df)} rows  (last: {maf_last})")
+    print(f"  BAF: {len(baf_df)} rows  (last: {baf_df['Date'].iloc[-1].date()})")
+    print(f"  MAF: {len(maf_df)} rows  (last: {maf_df['Date'].iloc[-1].date()})")
 
     BAF_FUNDS = ['Tata', 'Nippon', 'Edelweiss', 'Kotak', 'SBI', 'HDFC', 'ICICI']
     MAF_FUNDS = ['Whiteoak', 'UTI', 'HDFC', 'Nippon', 'SBI', 'Kotak', 'DSP', 'ICICI']
     ALLOCATE  = ['Moderate', 'Aggressive', 'Equity']
 
-    print("Computing metrics…", end=' ')
+    print("Computing metrics…", end=' ', flush=True)
     metrics = {
         'BAF':          {f: compute_metrics(baf_df, f) for f in BAF_FUNDS},
         'MAF':          {f: compute_metrics(maf_df, f) for f in MAF_FUNDS},
@@ -168,7 +236,11 @@ def main():
     metrics['MAF_avg'] = cat_avg_metrics(metrics['MAF'])
     print("done.")
 
-    print("Computing monthly returns…", end=' ')
+    # Grab the 1M label from the first fund (same for all)
+    first_m = next(m for m in metrics['BAF'].values() if m)
+    one_m_label = first_m.get('1m_label', '1M')
+
+    print("Computing monthly returns…", end=' ', flush=True)
     mom = {
         'BAF':          monthly_returns(baf_df, BAF_FUNDS),
         'MAF':          monthly_returns(maf_df, MAF_FUNDS),
@@ -181,7 +253,7 @@ def main():
     }
     print("done.")
 
-    print("Building NAV series…", end=' ')
+    print("Building NAV series…", end=' ', flush=True)
     navs = {
         'BAF': build_nav_series(baf_df, BAF_FUNDS + ALLOCATE),
         'MAF': build_nav_series(maf_df, MAF_FUNDS + ALLOCATE),
@@ -189,7 +261,13 @@ def main():
     print("done.")
 
     data = {
-        'last_updated':    str(date.today()),
+        'last_updated':  str(date.today()),
+        'one_m_label':   one_m_label,          # e.g. "Feb 2026"
+        'si_dates': {
+            'equity':     SI_EQUITY_DATE,
+            'aggressive': SI_AGGRESSIVE_DATE,
+            'moderate':   SI_MODERATE_DATE,
+        },
         'metrics':         metrics,
         'monthly_returns': mom,
         'cat_avg_monthly': cat_avg_mom,
@@ -214,6 +292,7 @@ def main():
 
     size_kb = os.path.getsize(json_path) / 1024
     print(f"\n✅  data.json updated  ({size_kb:.1f} KB)")
+    print(f"   1M label: {one_m_label}")
     print(f"   Push index.html + data.json to GitHub Pages to deploy.\n")
 
 
